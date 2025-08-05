@@ -1,0 +1,140 @@
+# Docker Compose for Java OOP Fruit Example
+# Provides complete development environment with multiple services
+
+version: '3.8'
+
+services:
+  # Main development container
+  java-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder  # Use builder stage for development
+    container_name: java-oop-fruit-dev
+    volumes:
+      - .:/app:cached  # Mount source code for live development
+      - java-cache:/root/.m2  # Cache Maven dependencies
+    working_dir: /app
+    command: tail -f /dev/null  # Keep container running
+    environment:
+      - JAVA_OPTS=-Xmx512m
+      - TERM=xterm-256color
+    networks:
+      - fruit-network
+    stdin_open: true
+    tty: true
+    labels:
+      - "project=java-oop-fruit"
+      - "environment=development"
+
+  # Runtime container for testing
+  java-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime  # Use runtime stage for testing
+    container_name: java-oop-fruit-runtime
+    volumes:
+      - .:/app:ro  # Read-only mount for testing
+    working_dir: /app
+    command: java FruitDemo
+    depends_on:
+      - java-dev
+    networks:
+      - fruit-network
+    labels:
+      - "project=java-oop-fruit"
+      - "environment=runtime"
+
+  # Test runner service
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: java-oop-fruit-tests
+    volumes:
+      - .:/app:cached
+      - test-reports:/app/reports
+    working_dir: /app
+    command: |
+      sh -c "
+        echo 'Running comprehensive test suite...' &&
+        java FruitTests &&
+        echo 'Running development scripts tests...' &&
+        if [ -f scripts/test.sh ]; then
+          chmod +x scripts/test.sh &&
+          ./scripts/test.sh -v -r
+        fi
+      "
+    depends_on:
+      - java-dev
+    networks:
+      - fruit-network
+    environment:
+      - GENERATE_REPORTS=true
+    labels:
+      - "project=java-oop-fruit"
+      - "environment=testing"
+
+  # Code quality analysis
+  code-quality:
+    image: openjdk:21-jdk-slim
+    container_name: java-oop-fruit-quality
+    volumes:
+      - .:/workspace:ro
+    working_dir: /workspace
+    command: |
+      sh -c "
+        echo 'Analyzing code quality...' &&
+        echo 'Java files found:' &&
+        find . -name '*.java' -type f &&
+        echo 'Checking line endings...' &&
+        file *.java | grep -v CRLF || echo 'All files use LF line endings ✓' &&
+        echo 'Counting lines of code...' &&
+        wc -l *.java &&
+        echo 'Counting comments...' &&
+        grep -c '^[[:space:]]*//\|^[[:space:]]*\*' *.java | awk -F: '{sum += \$2} END {print \"Total comment lines: \" sum}' &&
+        echo 'Code quality analysis complete ✓'
+      "
+    networks:
+      - fruit-network
+    labels:
+      - "project=java-oop-fruit"
+      - "environment=quality"
+
+  # Documentation server (for viewing README, etc.)
+  docs:
+    image: nginx:alpine
+    container_name: java-oop-fruit-docs
+    volumes:
+      - ./README.md:/usr/share/nginx/html/index.md:ro
+      - ./CLAUDE.md:/usr/share/nginx/html/claude.md:ro
+      - ./docs-nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:80"
+    networks:
+      - fruit-network
+    labels:
+      - "project=java-oop-fruit"
+      - "environment=documentation"
+    profiles:
+      - docs  # Only start with --profile docs
+
+# Named volumes for persistence
+volumes:
+  java-cache:
+    driver: local
+    labels:
+      - "project=java-oop-fruit"
+  test-reports:
+    driver: local
+    labels:
+      - "project=java-oop-fruit"
+
+# Custom network
+networks:
+  fruit-network:
+    driver: bridge
+    labels:
+      - "project=java-oop-fruit"

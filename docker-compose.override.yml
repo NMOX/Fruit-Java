@@ -1,0 +1,61 @@
+# Docker Compose Override for Local Development
+# This file is automatically loaded and provides local development customizations
+
+version: '3.8'
+
+services:
+  java-dev:
+    # Development-specific environment variables
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=debug
+      - DEVELOPMENT_MODE=true
+    
+    # Additional development volumes
+    volumes:
+      - ~/.gitconfig:/root/.gitconfig:ro  # Share git config
+      - ~/.ssh:/root/.ssh:ro  # Share SSH keys (if needed)
+    
+    # Expose additional ports for debugging
+    ports:
+      - "5005:5005"  # Java debug port
+    
+    # Override command for development
+    command: |
+      sh -c "
+        echo 'Starting development environment...' &&
+        echo 'Available commands:' &&
+        echo '  make help    - Show available make targets' &&
+        echo '  make compile - Compile Java files' &&
+        echo '  make test    - Run tests' &&
+        echo '  make run     - Run demo' &&
+        echo '  make clean   - Clean compiled files' &&
+        echo '' &&
+        echo 'Development container ready! Use: docker exec -it java-oop-fruit-dev bash' &&
+        tail -f /dev/null
+      "
+
+  # Development file watcher (if needed)
+  file-watcher:
+    image: openjdk:21-jdk-slim
+    container_name: java-oop-fruit-watcher
+    volumes:
+      - .:/app:cached
+    working_dir: /app
+    command: |
+      sh -c "
+        apt-get update && apt-get install -y inotify-tools &&
+        echo 'Starting file watcher...' &&
+        while inotifywait -e modify,create,delete -r *.java; do
+          echo 'Java files changed, recompiling...' &&
+          javac *.java &&
+          echo 'Recompilation complete'
+        done
+      "
+    networks:
+      - fruit-network
+    profiles:
+      - watch  # Only start with --profile watch
+    labels:
+      - "project=java-oop-fruit"
+      - "environment=development-watch"
